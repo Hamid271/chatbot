@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, render_template
 import os
 import time
-from openai import OpenAI
+import openai  # Correct import
 
 app = Flask(__name__)
 
@@ -9,8 +9,8 @@ app = Flask(__name__)
 API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 
-# Initialize OpenAI client
-client = OpenAI(api_key=API_KEY)
+# Set the OpenAI API key
+openai.api_key = API_KEY
 
 # Global thread ID to keep track of the conversation
 THREAD_ID = None
@@ -30,36 +30,30 @@ def send_message():
     try:
         # Create a new thread if none exists
         if not THREAD_ID:
-            thread = client.beta.threads.create(
+            response = openai.ChatCompletion.create(
+                model="gpt-4",  # Adjust the model name as needed
                 messages=[
                     {"role": "user", "content": user_message}
                 ]
             )
-            THREAD_ID = thread.id
+            THREAD_ID = response['id']  # Save the thread ID
         else:
             # Add the user message to the existing thread
-            client.beta.threads.messages.create(
-                thread_id=THREAD_ID,
-                role="user",
-                content=user_message
+            response = openai.ChatCompletion.create(
+                model="gpt-4",  # Adjust the model name as needed
+                messages=[
+                    {"role": "user", "content": user_message}
+                ]
             )
 
-        # Submit a run to the assistant
-        run = client.beta.threads.runs.create(thread_id=THREAD_ID, assistant_id=ASSISTANT_ID)
-
-        # Wait for the run to complete
-        while run.status != "completed":
-            run = client.beta.threads.runs.retrieve(thread_id=THREAD_ID, run_id=run.id)
-            time.sleep(1)
-
         # Get the assistant's response
-        message_response = client.beta.threads.messages.list(thread_id=THREAD_ID)
-        latest_message = message_response.data[0].content[0].text.value
+        assistant_message = response['choices'][0]['message']['content']
 
-        return jsonify({'response': latest_message})
+        return jsonify({'response': assistant_message})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.getenv('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
