@@ -17,7 +17,7 @@ THREAD_ID = None
 
 @app.route('/')
 def home():
-    return render_template('chat.html')
+    return render_template('index.html')
 
 @app.route('/send_message', methods=['POST'])
 def send_message():
