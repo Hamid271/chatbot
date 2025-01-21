@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat Assistant</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #343541;
+            color: #d1d5db;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            max-width: 800px;
+            margin: auto;
+            height: 100%;
+            background-color: #444654;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        }
+        .messages {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background-color: #343541;
+        }
+        .message {
+            padding: 10px;
+            border-radius: 8px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+        .message.user {
+            align-self: flex-end;
+            background-color: #10a37f;
+            color: white;
+        }
+        .message.assistant {
+            align-self: flex-start;
+            background-color: #4a4e69;
+            color: white;
+        }
+        .input-box {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #565869;
+            background-color: #40414f;
+        }
+        .input-box input {
+            flex: 1;
+            padding: 10px;
+            font-size: 16px;
+            background-color: #2a2b32;
+            border: none;
+            border-radius: 4px;
+            color: white;
+        }
+        .input-box button {
+            margin-left: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            background-color: #10a37f;
+            color: white;
+            cursor: pointer;
+        }
+        .voice-controls {
+            display: flex;
+            justify-content: flex-end;
+            margin: 10px;
+            gap: 10px;
+        }
+        .voice-controls select {
+            padding: 5px;
+            font-size: 14px;
+            border-radius: 4px;
+            background-color: #2a2b32;
+            color: white;
+            border: none;
+        }
+        .voice-controls button {
+            padding: 5px 10px;
+            font-size: 14px;
+            background-color: #10a37f;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div id="messages" class="messages"></div>
+        <div class="input-box">
+            <input id="userInput" type="text" placeholder="Type your message here..." onkeydown="checkEnter(event)">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+    <div class="voice-controls">
+        <select id="voiceSelect"></select>
+        <button onclick="toggleVoiceMode()">🎤 Voice Mode Off</button>
+    </div>
+    <script>
+        let voiceMode = false;
+        let voices = [];
+        let selectedVoice = null;
+        let isProcessing = false;
+
+        function loadVoices() {
+            voices = window.speechSynthesis.getVoices();
+            const voiceSelect = document.getElementById("voiceSelect");
+            voiceSelect.innerHTML = "";
+            voices.forEach((voice, index) => {
+                const option = document.createElement("option");
+                option.value = index;
+                option.textContent = `${voice.name} (${voice.lang})`;
+                voiceSelect.appendChild(option);
+            });
+            selectedVoice = voices[0];
+        }
+
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = loadVoices;
+        }
+
+        async function sendMessage() {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            const userInput = document.getElementById("userInput").value.trim();
+            if (!userInput) {
+                isProcessing = false;
+                return;
+            }
+
+            addMessage(userInput, "user");
+            document.getElementById("userInput").value = "";
+
+            try {
+                const response = await fetch("/send_message", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: userInput }),
+                });
+                const data = await response.json();
+                addMessage(data.response || "Error: No response", "assistant");
+                if (voiceMode) speakText(data.response);
+            } catch (error) {
+                console.error(error);
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        function addMessage(content, type) {
+            const messagesDiv = document.getElementById("messages");
+            const messageDiv = document.createElement("div");
+            messageDiv.classList.add("message", type);
+            messageDiv.textContent = content;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function speakText(text) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.voice = voices[document.getElementById("voiceSelect").value];
+            speechSynthesis.speak(utterance);
+        }
+
+        function toggleVoiceMode() {
+            voiceMode = !voiceMode;
+            const button = document.querySelector(".voice-controls button");
+            button.textContent = voiceMode ? "🎤 Voice Mode On" : "🎤 Voice Mode Off";
+            if (voiceMode) startSpeechRecognition();
+        }
+
+        function startSpeechRecognition() {
+            const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.lang = selectedVoice.lang;
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                addMessage(transcript, "user");
+                document.getElementById("userInput").value = transcript;
+                sendMessage();
+            };
+            recognition.onerror = (event) => console.error(event);
+            recognition.start();
+        }
+
+        function checkEnter(event) {
+            if (event.key === "Enter") sendMessage();
+        }
+
+        loadVoices();
+    </script>
+
+
+
+<script>
+    const API_URL = "https://your-flask-backend-url.com/send_message"; // Update this to your deployed Flask URL
+
+    async function sendMessage() {
+        if (isProcessing) return;
+        isProcessing = true;
+
+        const userInput = document.getElementById("userInput").value.trim();
+        if (!userInput) {
+            isProcessing = false;
+            return;
+        }
+
+        addMessage(userInput, "user");
+        document.getElementById("userInput").value = "";
+
+        try {
+            const response = await fetch(API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: userInput }),
+            });
+            const data = await response.json();
+            addMessage(data.response || "Error: No response", "assistant");
+            if (voiceMode) speakText(data.response);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            isProcessing = false;
+        }
+    }
+</script>
+
+
+
+</body>
+</html>
