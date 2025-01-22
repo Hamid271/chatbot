@@ -31,14 +31,13 @@ def send_message():
         response = openai.ChatCompletion.create(
             model="gpt-4",  # Specify the GPT model
             messages=[
-                {"role": "system", "content": f"Assistant ID: {ASSISTANT_ID}"},  # System-level instruction
+                {"role": "system", "content": f"You are an assistant configured with ID: {ASSISTANT_ID}."},
                 {"role": "user", "content": user_message},  # User's message
             ]
         )
 
         # Extract the assistant's response from the API response
         assistant_message = response['choices'][0]['message']['content']
-
         return jsonify({'response': assistant_message})  # Send the response back to the front-end
 
     except Exception as e:
