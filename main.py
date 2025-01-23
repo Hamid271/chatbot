@@ -1,45 +1,70 @@
 from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS  # Import Flask-CORS
+import time
+from openai import OpenAI
 import os
-import openai
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
 
-# Fetch API key and Assistant ID from environment variables
-API_KEY = os.getenv("OPENAI_API_KEY")
-ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 
-# Set OpenAI API key
-openai.api_key = API_KEY
+
+# Retrieve the API key and Assistant ID from environment variables
+API_KEY = os.getenv("OPENAI_API_KEY", "")
+ASSISTANT_ID = os.getenv("ASSISTANT_ID", "")
+
+if not API_KEY or not ASSISTANT_ID:
+    raise ValueError("OPENAI_API_KEY or ASSISTANT_ID not set in environment variables.")
+
+# Initialize OpenAI client
+client = OpenAI(api_key=API_KEY)
+
+# Global thread ID to keep track of the conversation
+THREAD_ID = None
 
 @app.route('/')
 def home():
-    """Serve the front-end HTML page."""
     return render_template('chat.html')
 
 @app.route('/send_message', methods=['POST'])
 def send_message():
-    """Process user messages and return assistant responses."""
+    global THREAD_ID
+
     user_message = request.json.get('message', '')
     if not user_message:
         return jsonify({'error': 'Message is required'}), 400
 
     try:
-        # Use OpenAI's ChatCompletion API
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": f"You are an assistant configured with ID {ASSISTANT_ID}."},
-                {"role": "user", "content": user_message},
-            ]
-        )
-        assistant_message = response['choices'][0]['message']['content']
-        return jsonify({'response': assistant_message})
+        # Create a new thread if none exists
+        if not THREAD_ID:
+            thread = client.beta.threads.create(
+                messages=[
+                    {"role": "user", "content": user_message}
+                ]
+            )
+            THREAD_ID = thread.id
+        else:
+            # Add the user message to the existing thread
+            client.beta.threads.messages.create(
+                thread_id=THREAD_ID,
+                role="user",
+                content=user_message
+            )
+
+        # Submit a run to the assistant
+        run = client.beta.threads.runs.create(thread_id=THREAD_ID, assistant_id=ASSISTANT_ID)
+
+        # Wait for the run to complete
+        while run.status != "completed":
+            run = client.beta.threads.runs.retrieve(thread_id=THREAD_ID, run_id=run.id)
+            time.sleep(1)
+
+        # Get the assistant's response
+        message_response = client.beta.threads.messages.list(thread_id=THREAD_ID)
+        latest_message = message_response.data[0].content[0].text.value
+
+        return jsonify({'response': latest_message})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True)
