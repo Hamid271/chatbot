@@ -1,11 +1,9 @@
 from flask import Flask, request, jsonify, render_template
 import time
-from openai import OpenAI
+import openai
 import os
 
 app = Flask(__name__)
-
-
 
 # Retrieve the API key and Assistant ID from environment variables
 API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -14,8 +12,8 @@ ASSISTANT_ID = os.getenv("ASSISTANT_ID", "")
 if not API_KEY or not ASSISTANT_ID:
     raise ValueError("OPENAI_API_KEY or ASSISTANT_ID not set in environment variables.")
 
-# Initialize OpenAI client
-client = OpenAI(api_key=API_KEY)
+# Set the OpenAI API key
+openai.api_key = API_KEY
 
 # Global thread ID to keep track of the conversation
 THREAD_ID = None
@@ -33,35 +31,23 @@ def send_message():
         return jsonify({'error': 'Message is required'}), 400
 
     try:
-        # Create a new thread if none exists
+        # If THREAD_ID doesn't exist, start a new "conversation" by including the first message
         if not THREAD_ID:
-            thread = client.beta.threads.create(
-                messages=[
-                    {"role": "user", "content": user_message}
-                ]
-            )
-            THREAD_ID = thread.id
+            messages = [{"role": "user", "content": user_message}]
         else:
-            # Add the user message to the existing thread
-            client.beta.threads.messages.create(
-                thread_id=THREAD_ID,
-                role="user",
-                content=user_message
-            )
+            # Continue the conversation by adding the new user message
+            messages.append({"role": "user", "content": user_message})
 
-        # Submit a run to the assistant
-        run = client.beta.threads.runs.create(thread_id=THREAD_ID, assistant_id=ASSISTANT_ID)
+        # Generate a response using the ChatCompletion endpoint
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # Use OpenAI's chat model
+            messages=messages
+        )
 
-        # Wait for the run to complete
-        while run.status != "completed":
-            run = client.beta.threads.runs.retrieve(thread_id=THREAD_ID, run_id=run.id)
-            time.sleep(1)
+        # Extract the assistant's reply
+        assistant_message = response['choices'][0]['message']['content']
 
-        # Get the assistant's response
-        message_response = client.beta.threads.messages.list(thread_id=THREAD_ID)
-        latest_message = message_response.data[0].content[0].text.value
-
-        return jsonify({'response': latest_message})
+        return jsonify({'response': assistant_message})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
